@@ -1,0 +1,108 @@
+---
+title: "UNSD SDGs API"
+author: "UNFPA"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## About
+
+This notebooks is designed to complete collection and processing of data from [UNSD SDGs API]((https://unstats.un.org/sdgapi/swagger/)).
+
+## Set-up
+
+```{r Libraries}
+# data wrangling
+library(tidyverse)
+library(magrittr)
+library(openxlsx)
+
+# loading the data4whw package
+devtools::load_all(
+  path = ".",
+  reset = TRUE,
+  export_all = TRUE,
+  helpers = TRUE
+)
+```
+
+## Data Collection
+
+```{r}
+# all data series available in the UNSD SDGs API
+df.series <- exctract_sdg_series_list()
+df.series %>% head()
+```
+
+```{r}
+# the list of indicators of interest for the WHW
+series.codes <- read_lines("../data/raw/unsd_sdg_series.txt")
+series.codes
+```
+
+```{r}
+# some series codes might be duplicated
+df.series %<>% filter(code %in% series.codes) %>% distinct()
+df.series %>% head()
+```
+
+```{r}
+# testing with a single indicator code and one country
+df.data <- post_sdg_api(
+  command = "/v1/sdg/Series/DataCSV",
+  body = list(
+    seriesCodes = c("SI_POV_NAHC"),
+    areaCodes = c(528) # 528 - the Netherlands
+  )
+)
+df.data %>% dim() %>% cat()
+df.data %>% head()
+```
+
+```{r}
+# saving each series as a separate sheet in an Excel file, to be reshaped later on
+download_sgd_series_data(
+  codes = series.codes,
+  filepath = "../data/tmp/unsd_indicators.xlsx",
+  verbose = TRUE
+)
+```
+
+```{r}
+df.series <- combine_sdg_series_data(filepath = "../data/tmp/unsd_indicators.xlsx")
+df.series %>% dim() %>% cat()
+df.series %>% head()
+```
+
+```{r}
+# exploring disaggregation columns
+for (col in colnames(df.series %>% select(starts_with("[")))) {
+  cat(col, df.series %>% pull(col) %>% unique(), "\n\n")
+}
+```
+
+```{r}
+df.series <- clean_sdg_series_data(df.series)
+df.series %>% dim() %>% cat()
+df.series %>% head()
+```
+
+```{r}
+write_csv(x = df.series, file = "../data/tmp/unsd_indicators_combined.csv")
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```

@@ -1,0 +1,392 @@
+---
+title: "Combine Sources"
+author: "UNFPA"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## About
+
+This notebook is designed to combine all sources, e.g., SDG, IHME, DHS,
+into a single harmonised database.
+
+## Set-up
+
+```{r Libraries}
+# data wrangling
+library(tidyverse)
+library(magrittr)
+library(openxlsx)
+
+# loading the data4whw package
+devtools::load_all(
+  path = ".",
+  reset = TRUE,
+  export_all = TRUE,
+  helpers = TRUE
+)
+```
+
+
+## Combining Sources
+
+```{r}
+file.folder <- file.path("..", "data", "tmp")
+source.paths <- c(
+  file.path(file.folder, "unsd_indicators_combined.csv"),
+  file.path(file.folder, "ihme_indicators_combined.csv"),
+  file.path(file.folder, "dhs_indicators_combined.csv"),
+  file.path(file.folder, "miscellaneous_indicators_combined.csv")
+)
+```
+
+```{r}
+df.indicators <- combine_indicators(source.paths)
+df.indicators %>% dim() %>% cat()
+df.indicators %>% head()
+```
+
+```{r}
+df.indicators %>% pull(indicator_definition) %>% n_distinct()
+```
+
+```{r}
+sum(is.na(df.indicators$iso3code))
+```
+
+
+```{r}
+df.m49 <- read.xlsx("../data/raw/M49 Classification.xlsx") %>% 
+  drop_na(iso3code)
+country2iso <- df.m49 %>% select(name, iso3code) %>% deframe()
+country2iso[["Côte d'Ivoire"]] <- "CIV" # manually add
+iso2country <- df.m49 %>% select(iso3code, name) %>% deframe()
+```
+
+```{r}
+df.indicators %<>% mutate(
+  iso3code = if_else(
+    is.na(iso3code),
+    recode(country, !!!country2iso),
+    iso3code
+  ),
+  iso3code = if_else(str_length(iso3code) == 3, iso3code, NULL)
+)
+```
+
+```{r}
+# entries without an iso3code should now only represent regions (to be dropped)
+df.indicators %>% filter(is.na(iso3code)) %>% select(country) %>% distinct() %>% arrange(country)
+```
+
+```{r}
+# remove anything that has no iso3 code, see above for a check
+df.indicators %>% dim()
+df.indicators <- df.indicators %>% 
+  drop_na(iso3code, value) %>% 
+  filter(year <= 2022, value != "NaN")
+df.indicators %>% dim()
+```
+
+```{r}
+df.indicators %<>% 
+  filter(iso3code %in% names(iso2country)) %>%
+  mutate(
+    country = recode(iso3code, !!!iso2country)
+  )
+
+sapply(df.indicators, function(x){sum(is.na(x))})
+```
+
+```{r}
+df.metadata <- openxlsx::read.xlsx(
+  xlsxFile = "../data/raw/indicators_mapping-v22-11-03.xlsx",
+  sheet = "country_mapping"
+)
+df.metadata %>% dim()
+df.metadata %>% head()
+```
+
+```{r}
+df.indicators %>% dim()
+df.indicators <- left_join(
+  x = df.indicators,
+  y = df.metadata,
+  by = "iso3code"
+)
+df.indicators %>% dim()
+df.indicators %>% head()
+```
+
+```{r}
+# countries that will be removed
+df.indicators %>% filter(is.na(to_keep)) %>% 
+  select(iso3code, country) %>% 
+  distinct()
+```
+
+```{r}
+df.indicators %<>% filter(to_keep == 1) %>% select(-to_keep)
+df.indicators %>% dim()
+```
+
+```{r}
+# must not contain any missing values
+sum(is.na(df.indicators$indicator_definition))
+```
+
+```{r}
+#df.indicators %>% 
+#  select(indicator_id, indicator_definition) %>% 
+#  distinct() %>%
+#  write.xlsx(file = "../data//tmp/indicators_mapping.xlsx")
+```
+
+```{r}
+# mapping of country names to ISO for standardisation, save for revision only
+#df.indicators %>% 
+#  select(country, iso3code) %>% 
+#  distinct() %>% 
+#  arrange(country) %>%
+#  write.xlsx(file = "../data//tmp/country_mapping.xlsx")
+```
+
+
+```{r}
+replace.sex <- list(
+  "All" = "_T",
+  "Both sexes" = "_T",
+  "BOTHSEX" = "_T",
+  "Total" = "_T",
+  "F"= "FEMALE",
+  "M" = "MALE",
+  "Female" = "FEMALE",
+  "Male" = "MALE"
+)
+
+replace.age <- list(
+  "Total" = "_T",
+  "ALLAGE" = "_T",
+  "Y0T4" = "<5Y",
+  "0-14" = "<15Y",
+  "M0T5" = "<6M",
+  "M0T1" = "<2M",
+  "Y15T19" = "15-19",
+  "Y15T49" = "15-49"
+)
+
+replace.residence <- list(
+  "ALLAREA" = "_T",
+  "R" = "RURAL",
+  "Rural" = "RURAL",
+  "U" = "URBAN",
+  "Urban" = "URBAN"
+)
+
+replace.education <- list(
+  "LOWSEC" = "LOW_SEC_EDU",
+  "UPPSEC" = "UPP_SEC_EDU",
+  "PRIMAR" = "PRI_EDU",
+  "No education" = "NO_EDU",
+  "Primary" = "PRI_EDU",
+  "Secondary" = "SEC_EDU",
+  "Higher" = "HIGH_EDU",
+  "No education or primary" = "NO_PRI_EDU",
+  "Secondary or higher" = "SEC_HIGH_EDU"
+)
+
+replace.wealth <- list(
+  "_T" = "_T",
+  "Q1" = "Q1",
+  "Q2" = "Q2",
+  "Q3" = "Q3",
+  "Q4" = "Q4",
+  "Q5" = "Q5",
+  "Lowest" = "Q1",
+  "Second" = "Q2",
+  "Middle" = "Q3",
+  "Fourth" = "Q4",
+  "Highest" = "Q5"
+)
+
+replace.marital_status <- list(
+  "Married or in a union women" = "MARRIED_IN_UNION",
+  "All women" = "ALL_WOMEN",
+  "Unmarried women" = "UN_MARRIED",
+  "Not applicable" = "_T",
+  "Married or living together" = "MARRIED",
+  "Widowed, divorced, separated" = "WID_DIV_SEP",
+  "Never married" = "NEVER_MARRIED"
+)
+
+replace.employment <- list(
+  "Employed for cash" = "EMPLOYED_CASH",
+  "Employed for kind" = "EMPLOYED_KIND",
+  "Unemployed" = "UNEMPLOYED"
+)
+
+df.indicators %<>% 
+  # remove rows with redundant disaggregation by wealth
+  filter(
+    is.na(wealth) | wealth %in% names(replace.wealth)
+  ) %>% 
+  mutate(
+  indicator_definition = str_trim(indicator_definition),
+  value = str_replace(value, "<|>", "") %>% as.numeric(), # recode "<5", ">95" etc
+  indicator_source_id = if_else(is.na(indicator_id), source_id, indicator_id),
+  sex = recode(sex, !!!replace.sex),
+  age = recode(age, !!!replace.age),
+  residence = recode(residence, !!!replace.residence),
+  education = recode(education, !!!replace.education),
+  wealth = recode(wealth, !!!replace.wealth),
+  marital_status = recode(marital_status, !!!replace.marital_status),
+  employment = recode(employment, !!!replace.employment)
+)
+
+df.indicators %>% select(indicator_source_id, source_id, indicator_id) %>% distinct()
+```
+
+```{r}
+disaggregations <- c(
+  "sex", "age", "residence", "nature", "education", "wealth", 
+  "marital_status", "living_child", "employment", "grounds_of_discrimination"
+)
+
+for (col in disaggregations) {
+  cat(col, "\n", df.indicators %>% pull(col) %>% unique() %>% sort(), "\n\n")
+}
+```
+
+```{r}
+df.indicators %>% dim()
+df.indicators %<>% select(-source_id, -indicator_id)
+df.indicators %>% dim()
+```
+
+```{r}
+df.mapping <- read.xlsx(
+  xlsxFile = "../data//raw/indicators_mapping-v22-11-03.xlsx",
+  sheet = "indicator_mapping"
+)
+
+to.keep <- c(
+  "indicator_definition",
+  "indicator_definition_short",
+  "dimension",
+  "subdimension",
+  "tier"
+)
+
+df.mapping %<>% 
+  filter(tier != 0) %>%
+  select(all_of(to.keep))
+df.mapping %>% dim()
+df.mapping %>% head()
+```
+
+```{r}
+# many-to-one mapping, the number of rows must be unchanged
+df.indicators %>% dim()
+df.indicators <- left_join(df.indicators, df.mapping, by = "indicator_definition")
+df.indicators %>% dim()
+```
+
+```{r}
+# checking if any indicator is without a dimension, these will be removed
+df.indicators %>% filter(is.na(dimension)) %>% 
+  select(indicator_definition, indicator_source_id) %>%
+  distinct() %>%
+  arrange(indicator_definition) %>% pull(indicator_definition)
+```
+
+```{r}
+df.indicators %>% dim()
+df.indicators <- df.indicators %>% drop_na(dimension)
+df.indicators %>% dim()
+df.indicators %>% select(country, iso3code) %>% distinct()
+```
+
+```{r}
+df.indicators %>% select(indicator_definition) %>% distinct() %>% arrange(indicator_definition)
+```
+
+```{r}
+columns.ordered <- c(
+  "indicator_source_id", "country", "iso3code",
+  "region_sdg_level_1", "region_sdg_level_2", "region_wb", "income_group",
+  "dimension", "subdimension",
+  "indicator_definition", "tier", "indicator_definition_short",
+  "year", "source",  "source_details", "units", "nature",
+  "age", "sex",  "residence", "education", "wealth", "marital_status", "employment", 
+  "living_child", "region", "grounds_of_discrimination", "value", "latest_data_trend"
+)
+
+columns.fillna <- list(
+  age = "_T",
+  sex = "_T",
+  residence = "_T",
+  education = "_T",
+  wealth = "_T",
+  marital_status = "_T",
+  employment = "_T",
+  living_child = "_T",
+  region = "_T",
+  grounds_of_discrimination = "_T",
+  latest_data_trend = TRUE
+)
+
+df.indicators %<>% select(all_of(columns.ordered)) %>% replace_na(., columns.fillna)
+sapply(df.indicators, function(x){sum(is.na(x))})
+```
+
+```{r}
+df.indicators <- df.indicators %>%
+    dplyr::group_by(
+      indicator_definition, iso3code, age, sex, residence, education, 
+      wealth, marital_status, employment, living_child, region, grounds_of_discrimination
+      ) %>%
+    dplyr::mutate(latest_data_level = year == max(year) & latest_data_trend) %>%
+    dplyr::ungroup() 
+
+df.indicators %>% pull(latest_data_level) %>% table()
+```
+
+```{r}
+# checking for duplicates, there must not be any
+columns <- c(
+  "indicator_definition", "iso3code", "year", "nature",
+  "age", "sex", "residence", "education",
+  "wealth", "marital_status", "employment", "living_child",
+  "region", "grounds_of_discrimination"
+)
+n.total <- df.indicators %>% 
+  filter(latest_data_trend == TRUE) %>% 
+  nrow()
+n.distinct <- df.indicators %>% 
+  filter(latest_data_trend == TRUE) %>% 
+  select(all_of(columns)) %>% 
+  n_distinct()
+sprintf("Duplicated rows: %s", n.total - n.distinct)
+```
+
+```{r}
+df.indicators <- df.indicators[!duplicated(df.indicators[c(columns)]),]
+```
+
+```{r}
+version <- format(Sys.Date(), "%y-%m-%d")
+
+# save as a CSV file
+filename <- sprintf("whw-indicators-db-v%s.csv", version)
+filepath <- file.path("..", "data", "out", filename)
+write_csv(x = df.indicators, file = filepath)
+
+# save as an Excel file
+filename <- sprintf("whw-indicators-db-v%s.xlsx", version)
+filepath <- file.path("..", "data", "out", filename)
+write.xlsx(x = df.indicators, file = filepath)
+```

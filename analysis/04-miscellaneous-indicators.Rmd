@@ -1,0 +1,258 @@
+---
+title: "WB, UNPD and UNESCO API"
+author: "UNFPA"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## About
+
+This notebooks is designed to complete collection and processing of data from the World Bank, UNPD and UNESCO.
+
+## Set-up
+
+```{r Libraries}
+# data wrangling
+library(tidyverse)
+library(magrittr)
+
+# loading the data4whw package
+devtools::load_all(
+  path = ".",
+  reset = TRUE,
+  export_all = TRUE,
+  helpers = TRUE
+)
+```
+
+## Data Collection
+
+```{r}
+df.wb <- get_wb_indicators(
+  indicators = c("account.t.d", "account.t.d.1", "account.t.d.2"),
+  source_code = 28
+)
+
+df.wb %>% head()
+```
+
+```{r}
+
+df.wb <- clean_wb_indicators(df.wb)
+
+# additional cleaning for account indicators
+df.wb <- df.wb %>% dplyr::mutate(
+  sex = dplyr::case_when(
+    stringr::str_detect(indicator_definition, "\\bmale\\b") ~ "MALE",
+    stringr::str_detect(indicator_definition, "\\bfemale\\b") ~ "FEMALE",
+    TRUE ~ "BOTHSEX"
+  ),
+  indicator_definition = "Adults with an account (%)"
+)
+
+df.wb %>% head()
+```
+
+
+```{r}
+openxlsx::write.xlsx(x = df.wb, file = "../data/tmp/miscellaneous/wb_1.xlsx")
+```
+
+```{r}
+df.wb <- get_wb_indicators(
+  indicators = c("BI.WAG.PUBS.FM.SM"),
+  source_code = 64
+)
+df.wb <- clean_wb_indicators(df.wb)
+df.wb %>% head()
+```
+
+```{r}
+openxlsx::write.xlsx(x = df.wb, file = "../data/tmp/miscellaneous/wb_2.xlsx")
+```
+
+```{r}
+df.wb <- get_wb_indicators(
+  indicators = c("SL.TLF.CACT.FM.ZS"),
+  source_code = 2
+)
+df.wb <- clean_wb_indicators(df.wb)
+df.wb %>% head()
+```
+
+```{r}
+openxlsx::write.xlsx(x = df.wb, file = "../data/tmp/miscellaneous/wb_3.xlsx")
+```
+
+```{r}
+indicators <- list(
+  "Demand for family planning satisfied by any modern method (Percent)" = 8,
+  "Life expectancy at birth" = 61
+)
+
+df.unpd <- get_unpd_indicators(indicators)
+df.unpd <- clean_unpd_indicators(df.unpd)
+df.unpd %>% head()
+```
+
+```{r}
+openxlsx::write.xlsx(x = df.unpd, file = "../data/tmp/miscellaneous/unpd.xlsx")
+```
+
+```{r}
+indicators <- c("LR.AG15T24.F.LPIA", "LR.AG15T24.GPIA")
+df.unesco <- get_unesco_indicators(indicators)
+df.unesco <- clean_unesco_indicators(df.unesco)
+df.unesco %>% head()
+```
+
+```{r}
+openxlsx::write.xlsx(x = df.unesco, file = "../data/tmp/miscellaneous/unesco.xlsx")
+```
+
+```{r}
+df.who <- read_csv("../data/raw/WHOMortalityDatabase_Trends_years_sex_a_country_area_age-Breast cancer_21st September 2022 02_33.csv", skip = 6, na = c(","))
+df.who <- clean_who(df.who)
+df.who %<>% mutate(
+  indicator_id = ""
+)
+df.who %>% head()
+```
+
+```{r}
+openxlsx::write.xlsx(x = df.who, file = "../data/tmp/miscellaneous/who.xlsx")
+```
+
+```{r}
+params <- list(
+  "country" = "",
+  "indicator" = "NT_ANT_HAZ_NE2", # Height-for-age <-2 SD (stunting)
+  "sex" = "",
+  "age" = "",
+  "wealth" = "",
+  "residence" = "",
+  "education" = "",
+  "head_of_house" = ""
+)
+
+df.unicef <- get_unicef("UNICEF,NUTRITION,1.0", params)
+
+params <- list(
+  "country" = "",
+  "indicator" = "NT_BF_EXBF", # Exclusive breastfeeding (0-5 months)
+  "sex" = "",
+  "age" = "M0T1+M0T5+M2T3+M4T5",
+  "wealth" = "",
+  "residence" = "",
+  "education" = "",
+  "head_of_house" = ""
+)
+
+df.temp <- get_unicef("UNICEF,NUTRITION,1.0", params)
+df.unicef <- bind_rows(df.unicef, df.temp)
+
+params <- list(
+  "area" = "",
+  "indicator" = "MNCH_ANC4", 
+  # Antenatal care 4+ visits - percentage of women (aged 15-49 years) attended at least four times during pregnancy by any provider
+  "sex" = "F",
+  "age" = "",
+  "age_at_birth" = "",
+  "wealth" = "",
+  "residence" = "",
+  "education" = "",
+  "source" = ""
+)
+
+df.temp <- get_unicef("UNICEF,MNCH,1.0", params) %>% mutate(
+  SEX = "",
+  TIME_PERIOD = as.character(TIME_PERIOD)
+)
+df.unicef <- bind_rows(df.unicef, df.temp)
+
+params <- list(
+  "area" = "",
+  "indicator" = "MNCH_PNCMOM", 
+  "sex" = "F",
+  "age" = "Y15T49",
+  "age_at_birth" = "",
+  "wealth" = "",
+  "residence" = "",
+  "education" = "",
+  "source" = ""
+)
+
+df.temp <- get_unicef("UNICEF,MNCH,1.0", params) %>% mutate(
+  SEX = "",
+  TIME_PERIOD = as.character(TIME_PERIOD)
+)
+df.unicef <- bind_rows(df.unicef, df.temp)
+
+params <- list(
+  "area" = "",
+  "indicator" = "MNCH_PNCNB", 
+  "sex" = "_T",
+  "age" = "",
+  "age_at_birth" = "",
+  "wealth" = "",
+  "residence" = "",
+  "education" = "",
+  "source" = ""
+)
+
+df.temp <- get_unicef("UNICEF,MNCH,1.0", params) %>% mutate(
+  SEX = "",
+  TIME_PERIOD = as.character(TIME_PERIOD)
+)
+df.unicef <- bind_rows(df.unicef, df.temp)
+df.unicef <- clean_unicef(df.unicef)
+df.unicef %>% select(indicator_id, indicator_definition) %>% distinct()
+```
+
+```{r}
+openxlsx::write.xlsx(x = df.unicef, file = "../data/tmp/miscellaneous/unicef.xlsx")
+```
+
+```{r}
+df.gho <- get_gho_api("NCD_HYP_DIAGNOSIS_A")
+df.gho <- clean_gho(df.gho)
+openxlsx::write.xlsx(x = df.gho, file = "../data/tmp/miscellaneous/gho.xlsx")
+```
+
+```{r}
+df.whr <- read_excel("../data/raw/World Happinness Report 2022.xlsx")
+df.whr <- clean_whr(df.whr)
+openxlsx::write.xlsx(x = df.whr, file = "../data/tmp/miscellaneous/whr.xlsx")
+```
+
+```{r}
+df.combined <- combine_miscellaneous_indicators("../data/tmp/miscellaneous")
+df.combined %>% dim()
+df.combined %>% head()
+```
+
+```{r}
+df.combined %>% pull(indicator_definition) %>% table()
+```
+
+```{r}
+# checking for duplicates
+columns <- c(
+  "indicator_definition", "iso3code", "year", "nature",
+  "age", "sex", "residence", "education",
+  "wealth", "marital_status", "employment", "living_child",
+  "region"
+)
+
+df.combined %>% filter(latest_data_trend == TRUE) %>% select(one_of(columns)) %>% nrow()
+df.combined %>% filter(latest_data_trend == TRUE) %>% select(one_of(columns)) %>% n_distinct()
+```
+
+```{r}
+df.combined %>% write_csv("../data/tmp/miscellaneous_indicators_combined.csv")
+```
+

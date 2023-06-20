@@ -1,0 +1,106 @@
+---
+title: "DHS API"
+author: "UNFPA"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      error = FALSE,
+                      message = FALSE,
+                      warning = FALSE)
+```
+
+## About
+
+This R markdown file is designed to complete collection and processing of data from DHS API
+
+```{r, echo=FALSE}
+library(tidyverse)
+library(readxl)
+library(openxlsx)
+library(snakecase)
+library(knitr)
+library(magrittr)
+
+# loading the data4whw package
+devtools::load_all(
+  path = ".",
+  reset = TRUE,
+  export_all = TRUE,
+  helpers = TRUE
+)
+```
+
+### Select indicators and start extraction
+
+```{r}
+indicator_list_w <- c("RH_PAHC_W_PR1", "AN_NUTS_W_NRM") # women indicators
+indicator_list_m <- NULL
+indicator_list_c <- NULL
+
+dhs_raw <- fetch_data(indicators = c(indicator_list_w, indicator_list_m, indicator_list_c), breakdown_level = "all")
+dhs_df <- dhs_raw$df # raw data
+```
+
+### Country list with DHS code
+```{r}
+country_list <- fetch_countries()
+```
+
+### Add in ISO3 code for reference
+```{r}
+regional_ref <- read_excel("../data/raw/UNFPA regional classifications 2022.xlsx")
+ref_all <- regional_ref %>% left_join(country_list, by = c("ISOCode"="iso_3_country_code"))
+```
+
+```{r}
+dhs_wide <- dhs_df %>% select(indicator, value, survey_type, survey_year, dhs_country_code, country_name, characteristic_category, indicator_id, characteristic_label) %>%
+  unique() %>% 
+  group_by(country_name) %>%
+  mutate(row = row_number()) %>% 
+  pivot_wider(names_from = characteristic_category, values_from = characteristic_label) %>% 
+  mutate(sex = case_when(indicator_id %in% indicator_list_w ~ "FEMALE",
+                         indicator_id %in% indicator_list_m ~ "MALE",
+                         TRUE ~ "BOTHSEX"),
+         units = "PERCENT",
+         reporting_type = "G",
+         nature = "CA",
+         source_details = "") %>% select(-row)
+
+# consolidate 2 education columns
+dhs_edu1 <- dhs_wide %>% filter(!is.na(Education)) %>% rename(education = Education) %>% select(-c(`Education (2 groups)`))
+dhs_edu2 <- dhs_wide %>% filter(!is.na(`Education (2 groups)`)) %>% rename(education = `Education (2 groups)`) %>% select(-Education)
+dhs_wide <- dhs_wide %>% filter(is.na(Education) & is.na(`Education (2 groups)`)) %>% 
+  select(-c(Education, `Education (2 groups)`)) %>% 
+  rbind(dhs_edu1, dhs_edu2)
+
+dhs_wide_all <- dhs_wide %>% left_join(ref_all[,c(2,7)], by = "dhs_country_code") %>% 
+  replace_na(list(x = 0, y = "_T")) %>% 
+  apply(2,function(y) sapply(y,function(x) ifelse(is.null(x),"_T",x))) %>% as.data.frame() %>% 
+  select(country_name, ISOCode, indicator, survey_year, survey_type, source_details, value, indicator_id, units, reporting_type, nature, sex, everything(), -dhs_country_code, -Total) %>% 
+  dplyr::rename_all(snakecase::to_snake_case) %>% 
+  rename(country = country_name,
+         iso3code = iso_code,
+         indicator_definition = indicator,
+         year = survey_year,
+         source = survey_type,
+         source_id = indicator_id,
+         age = age_5_year_groups,
+         wealth = wealth_quintile,
+         living_child = number_of_living_children_grouped) %>%
+  filter(
+    is.na(age_10_year_groups) & is.na(age_grouped)
+  ) # remove rows with redunant disaggregation by age
+
+```
+
+# Save to folder
+```{r}
+write_csv(x = dhs_wide_all, file = "../data/tmp/dhs_indicators_combined.csv")
+```
+
+```{r}
+
+```

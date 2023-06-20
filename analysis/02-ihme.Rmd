@@ -1,0 +1,91 @@
+---
+title: "IHME"
+author: "UNFPA"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## About
+
+This notebook is designed to combine IHME data.
+
+## Set-up
+
+```{r Libraries}
+# data wrangling
+library(tidyverse)
+library(magrittr)
+library(openxlsx)
+
+# loading the data4whw package
+devtools::load_all(
+  path = ".",
+  reset = TRUE,
+  export_all = TRUE,
+  helpers = TRUE
+)
+```
+
+```{r}
+file.list = list(
+  "IHME-GBD_2019_DATA-d02c92b3-1.csv" = "All GBD causes attributable to household air pollution from solid fuels (DALYs per 100, 000)",
+  "IHME-GBD_2019_DATA-d93064d8-1.csv" = "All GBD causes attributable to sexually transmitted infections excluding HIV (DALYs per 100, 000)",
+  "IHME-GBD_2019_DATA-c6a786ae-1.csv" = "All GBD causes impairment attributable to anemia  (YLDs, %)",
+  "IHME-GBD_2019_DATA-6f16ce83-1.csv" = "All GBD causes attributable to high body-mass index (YLDs, %)",
+  "IHME-GBD_2019_DATA-7af0c39d-1.csv" = "All GBD causes attributable to childhood sexual abuse (DALYs per 100, 000)",
+  "IHME-GBD_2019_DATA-d2084e93-1.csv" = "All GBD causes attributable to mental disorders (DALYs per 100, 000)",
+  "IHME-GBD_2019_DATA-a34f9448-1.csv" = "All GBD causes attributable to low back pain (DALYs per 100, 000)",
+   #new indicators
+  "hiv_incidence.csv" = "All GBD causes attributable to HIV insidence rate (per 100, 000)",
+  "anc4.csv" = "ANC4 coverage", 
+  "IHME-GBD_2019_DATA-af019e1c-1.csv" = "All GBD causes attributable to high body-mass index (DALYs per 100, 000)",
+  "IHME-GBD_2019_DATA-cafa3f71-1.csv" = "All GBD causes attributable to child stunting (DALYs per 100, 000)",
+  "IHME-GBD_2019_DATA-953e77fc-1.csv" = "All GBD causes attributable to unsafe sanitation services (DALYs per 100, 000)",
+  "IHME-GBD_2019_DATA-e1d0240a-1.csv" = "All GBD causes attributable to intimate partner violence (DALYs per 100, 000)",
+  "IHME-GBD_2019_DATA-c41608d8-1.csv" = "All GBD causes attributable to sexual violence (DALYs per 100, 000)",
+  "IHME-GBD_2019_DATA-8f62566c-1.csv" = "All GBD causes attributable to breast cancer death rate (per 100, 000)",
+  "poverty.csv" = "Proportion of population living under $1.90 a day (%)")
+```
+
+```{r}
+df.ihme <- combine_ihme_indicators(file.list = file.list)
+df.ihme %>% dim() %>% cat()
+df.ihme %>% head()
+```
+
+```{r}
+country2iso <- openxlsx::read.xlsx("../data/raw/M49 Classification.xlsx") %>% 
+  select(name, iso3code) %>% deframe()
+
+# manually adding missing iso
+country2iso[["Taiwan (Province of China)"]] <- "TWN"
+country2iso[["Palestine"]] <- "PSE"
+country2iso[["Côte d'Ivoire"]] <- "CIV"
+country2iso[["Cote d'Ivoire"]] <- "CIV"
+country2iso[["Turkey"]] <- "TUR"
+country2iso[["United Kingdom"]] <- "GBR"
+
+df.ihme <- clean_ihme_indicators(df.ihme = df.ihme, country2iso = country2iso)
+df.ihme %>% dim() %>% cat()
+df.ihme %>% head()
+```
+
+```{r}
+validate_output_ihme(df.ihme)
+```
+
+```{r}
+write_csv(x = df.ihme, file = "../data/tmp/ihme_indicators_combined.csv")
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
